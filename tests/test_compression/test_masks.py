@@ -7,6 +7,7 @@ from headroom.compression.masks import (
     MaskSpan,
     StructureMask,
     apply_mask_to_text,
+    compute_entropy_char_mask,
     compute_entropy_mask,
     mask_to_spans,
 )
@@ -230,6 +231,17 @@ class TestComputeEntropyMask:
 
         assert mask.metadata["source"] == "entropy"
         assert mask.metadata["threshold"] == 0.9
+
+    def test_character_mask_preserves_complete_uuid(self):
+        """Character-level callers should preserve every character in a UUID."""
+        uuid = "8f14e45f-ceea-4123-8f14-e45fceea4123"
+        text = f"request {uuid} failed"
+
+        mask = compute_entropy_char_mask(text, threshold=0.8)
+
+        start = text.index(uuid)
+        assert all(mask.mask[start : start + len(uuid)])
+        assert not any(mask.mask[:start])
 
 
 class TestApplyMaskToText:

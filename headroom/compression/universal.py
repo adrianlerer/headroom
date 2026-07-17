@@ -38,7 +38,7 @@ from headroom.compression.handlers.code_handler import CodeStructureHandler
 from headroom.compression.handlers.json_handler import JSONStructureHandler
 from headroom.compression.masks import (
     StructureMask,
-    compute_entropy_mask,
+    compute_entropy_char_mask,
     mask_to_spans,
 )
 
@@ -205,15 +205,21 @@ class UniversalCompressor:
         Returns:
             Truncated text with indicator.
         """
-        target_len = int(len(text) * self.config.compression_ratio_target)
+        target_len = max(0, int(len(text) * self.config.compression_ratio_target))
         if len(text) <= target_len:
             return text
 
-        # Keep first and last portions
-        keep_start = target_len * 2 // 3
-        keep_end = target_len // 3
+        marker = "\n...[compressed]...\n"
+        if target_len <= len(marker):
+            return text[:target_len]
 
-        return text[:keep_start] + "\n...[compressed]...\n" + text[-keep_end:]
+        # Keep first and last portions within the target, including the marker.
+        content_budget = target_len - len(marker)
+        keep_end = content_budget // 3
+        keep_start = content_budget - keep_end
+        suffix = text[-keep_end:] if keep_end else ""
+
+        return text[:keep_start] + marker + suffix
 
     def compress(
         self,
@@ -268,8 +274,8 @@ class UniversalCompressor:
 
         # Optionally add entropy-based preservation
         if self.config.use_entropy_preservation:
-            entropy_mask = compute_entropy_mask(
-                tokens,
+            entropy_mask = compute_entropy_char_mask(
+                content,
                 threshold=self.config.entropy_threshold,
             )
             # Union: preserve if either mask says preserve

@@ -12,6 +12,7 @@ The mask is content-agnostic - it's just a boolean array aligned to tokens.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
@@ -337,6 +338,37 @@ def compute_entropy_mask(
         # Compute entropy
         score = EntropyScore.compute(token_str, threshold)
         mask.append(score.should_preserve)
+
+    return StructureMask(
+        tokens=tokens,
+        mask=mask,
+        metadata={"source": "entropy", "threshold": threshold},
+    )
+
+
+def compute_entropy_char_mask(
+    text: str,
+    threshold: float = 0.85,
+    min_token_length: int = 8,
+) -> StructureMask:
+    """Create a character-aligned mask for high-entropy text tokens.
+
+    Universal compression uses character-level masks, while entropy is only
+    meaningful over complete tokens such as UUIDs, hashes, and identifiers.
+    This helper scores non-whitespace runs and maps preserved runs back to
+    their character positions.
+    """
+    tokens = list(text)
+    mask = [False] * len(tokens)
+
+    for match in re.finditer(r"[A-Za-z0-9][A-Za-z0-9._@/+:-]*", text):
+        candidate = match.group()
+        if len(candidate) < min_token_length:
+            continue
+        if candidate.isalpha():
+            continue
+        if EntropyScore.compute(candidate, threshold).should_preserve:
+            mask[match.start() : match.end()] = [True] * len(candidate)
 
     return StructureMask(
         tokens=tokens,

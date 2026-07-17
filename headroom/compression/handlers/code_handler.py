@@ -34,6 +34,21 @@ _tree_sitter_parsers: dict[str, Any] = {}
 _tree_sitter_lock = threading.Lock()
 
 
+def _byte_to_char_offsets(content: str) -> list[int]:
+    """Map every UTF-8 byte offset to its containing character offset."""
+    encoded = content.encode("utf-8")
+    offsets = [0] * (len(encoded) + 1)
+    byte_index = 0
+
+    for char_index, char in enumerate(content):
+        next_byte_index = byte_index + len(char.encode("utf-8"))
+        offsets[byte_index:next_byte_index] = [char_index] * (next_byte_index - byte_index)
+        byte_index = next_byte_index
+
+    offsets[byte_index] = len(content)
+    return offsets
+
+
 def _check_tree_sitter() -> bool:
     """Check if tree-sitter is available."""
     global _tree_sitter_available
@@ -301,7 +316,9 @@ class CodeStructureHandler(BaseStructureHandler):
             HandlerResult with mask.
         """
         parser = _get_parser(language)
-        tree = parser.parse(content.encode("utf-8"))
+        encoded_content = content.encode("utf-8")
+        tree = parser.parse(encoded_content)
+        byte_to_char = _byte_to_char_offsets(content)
 
         # Collect structural spans
         spans: list[CodeSpan] = []
@@ -326,8 +343,8 @@ class CodeStructureHandler(BaseStructureHandler):
                         # Signature is from start to body start
                         spans.append(
                             CodeSpan(
-                                start=node.start_byte,
-                                end=body_node.start_byte,
+                                start=byte_to_char[node.start_byte],
+                                end=byte_to_char[body_node.start_byte],
                                 role="signature",
                                 is_structural=True,
                             )
@@ -335,8 +352,8 @@ class CodeStructureHandler(BaseStructureHandler):
                         # Body is compressible
                         spans.append(
                             CodeSpan(
-                                start=body_node.start_byte,
-                                end=body_node.end_byte,
+                                start=byte_to_char[body_node.start_byte],
+                                end=byte_to_char[body_node.end_byte],
                                 role="body",
                                 is_structural=False,
                             )
@@ -345,8 +362,8 @@ class CodeStructureHandler(BaseStructureHandler):
                         # No body found, preserve whole thing
                         spans.append(
                             CodeSpan(
-                                start=node.start_byte,
-                                end=node.end_byte,
+                                start=byte_to_char[node.start_byte],
+                                end=byte_to_char[node.end_byte],
                                 role=node_type,
                                 is_structural=True,
                             )
@@ -355,8 +372,8 @@ class CodeStructureHandler(BaseStructureHandler):
                     # Non-function structural nodes
                     spans.append(
                         CodeSpan(
-                            start=node.start_byte,
-                            end=node.end_byte,
+                            start=byte_to_char[node.start_byte],
+                            end=byte_to_char[node.end_byte],
                             role=node_type,
                             is_structural=True,
                         )
@@ -364,8 +381,8 @@ class CodeStructureHandler(BaseStructureHandler):
             elif node_type == "comment" and self.preserve_comments:
                 spans.append(
                     CodeSpan(
-                        start=node.start_byte,
-                        end=node.end_byte,
+                        start=byte_to_char[node.start_byte],
+                        end=byte_to_char[node.end_byte],
                         role="comment",
                         is_structural=True,
                     )
