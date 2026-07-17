@@ -167,6 +167,38 @@ def another_function():
 
         assert result.content_type == ContentType.TEXT
 
+    def test_simple_compression_never_expands_at_low_ratio(self):
+        """A tiny target must not append the complete input via a -0 slice."""
+        config = UniversalCompressorConfig(
+            use_magika=False,
+            use_kompress=False,
+            ccr_enabled=False,
+            compression_ratio_target=0.05,
+            min_content_length=50,
+        )
+        content = "B" * 55
+
+        result = UniversalCompressor(config=config).compress(content)
+
+        assert len(result.compressed) <= int(len(content) * 0.05)
+        assert result.compression_ratio <= 1.0
+
+    def test_entropy_preservation_uses_character_aligned_mask(self):
+        """The universal path should preserve UUIDs while compressing text."""
+        config = UniversalCompressorConfig(
+            use_magika=False,
+            use_kompress=False,
+            ccr_enabled=False,
+            min_content_length=50,
+        )
+        uuid = "8f14e45f-ceea-4123-8f14-e45fceea4123"
+        content = "A" * 80 + " " + uuid + " " + "B" * 80
+
+        result = UniversalCompressor(config=config).compress(content)
+
+        assert uuid in result.compressed
+        assert result.preservation_ratio > 0
+
     def test_compress_with_override_type(self, compressor):
         """Test compression with overridden content type."""
         content = '{"key": "value"}' + " " * 100  # Pad to meet min length
